@@ -1,0 +1,22 @@
+# Upstream application (licensed separately, never committed)
+practice-software-testing-main/
+
+# Dependencies
+node_modules/
+
+# Test reports and artifacts
+playwright-report/
+test-results/
+blob-report/
+newman/
+reports/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
