@@ -118,8 +118,17 @@ async function syncIssues() {
   for (const it of issues) {
     if (numbers[it.id]) { log(`issue exists: #${numbers[it.id]} ${it.id}`); continue; }
     if (DRY) { if (it.id === '1.2') log(`\n--- preview ${issueTitle(it)}\nlabels: ${labelsOf(it)}\n\n${body(it, numbers)}\n---\n`); continue; }
-    const url = gh(['issue', 'create', '--repo', REPO, '--title', issueTitle(it), '--body-file', '-', '--milestone', milestoneOf(it.id).title, '--label', labelsOf(it).join(',')], body(it, numbers));
-    numbers[it.id] = Number(url.split('/').pop());
+    for (let attempt = 1; !numbers[it.id]; attempt++) {
+      try {
+        const url = gh(['issue', 'create', '--repo', REPO, '--title', issueTitle(it), '--body-file', '-', '--milestone', milestoneOf(it.id).title, '--label', labelsOf(it).join(',')], body(it, numbers));
+        numbers[it.id] = Number(url.split('/').pop());
+      } catch (e) {
+        if (attempt >= 3) throw e;
+        // The request may have succeeded server-side despite a network error: re-check before retrying.
+        await sleep(5000 * attempt);
+        Object.assign(numbers, existingIssueNumbers());
+      }
+    }
     log(`issue #${numbers[it.id]} ${it.id}`);
     await sleep(1500); // stay below secondary rate limits for content creation
   }
