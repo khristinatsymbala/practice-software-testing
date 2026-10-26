@@ -1,0 +1,8 @@
+date,task,level,request,output,ai_errors,verification,decision,gap
+2026-10-23,setup,L3,Аналіз репозиторію practice-software-testing (Етап 1),"docs/PROJECT_ANALYSIS.md: стек, API, БД, тести, ризики (ліцензія, розбіжності docs vs код)",Кандидати: немає виявлених,,accepted,
+2026-10-23,setup,L3,"QA-план і навчальний план (v1–v3) з milestones, issues, скілами","docs/QA_PROJECT_PLAN.md, docs/LEARNING_PLAN.md; 75 задач","Кандидати: у підсумку v2 написано «15 точок рев'ю» і «20 🤖», насправді 14 і 17 (виправлено ШІ після перерахунку)",,corrected,
+2026-10-23,setup,L3,"GitHub-проєкт: repo, labels, milestones, issues, дошка","scripts/setup/*; 14 labels, 7 milestones, 75 issues, Project #2","Кандидати: скрипт не мав повтору після мережевих збоїв (упав двічі, виправлено); хибний висновок «на дошці 0 елементів» через затримку API",,corrected,
+2026-10-24,#1,L0,"Пояснення CLAUDE.md, конспекти, рев'ю чернетки","notes/*, рев'ю з 10 зауваженнями",Кандидати: задачу і рев'ю відкалібровано на рівень Middle замість Junior,,corrected,
+2026-10-24,setup,L3,Адаптація плану під Junior і оновлення GitHub,"LEARNING_PLAN v4, 77 issues","Кандидати: скрипт перезаписав опції Status → статуси 75 задач стерто (відновлено, причину виправлено)",,corrected,
+2026-10-26,#1,L3,Знайти команду скидання БД,docker compose exec laravel-api php artisan migrate:fresh --seed (PROJECT_ANALYSIS.md:44),Кандидати: у підказці вказано «розділ 3» без номера рядка → 23 хв пошуку,,accepted,
+2026-10-26,setup,L2,"Рефлексія: обсяг ручної документації, журнал ШІ, фокус проєкту","LEARNING_PLAN v5 (lean M2, CSV-журнал, задачі 1.8 і 6.6)",Кандидати: немає виявлених,,accepted,

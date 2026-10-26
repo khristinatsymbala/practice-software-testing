@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Creates labels, milestones, issues and the Projects v2 board from issues.mjs.
 // Idempotent: existing labels are updated, existing milestones / issues / items are skipped.
-// Usage: node scripts/setup/github-bootstrap.mjs [--dry-run] [--only=labels,milestones,issues,project]
+// --update also rewrites title, body, labels and milestone of existing issues and milestone descriptions.
+// Usage: node scripts/setup/github-bootstrap.mjs [--dry-run] [--update] [--only=labels,milestones,issues,project]
 import { execFileSync } from 'node:child_process';
 import { milestones, issues } from './issues.mjs';
 
@@ -9,6 +10,7 @@ const REPO = 'khristinatsymbala/practice-software-testing';
 const OWNER = REPO.split('/')[0];
 const PROJECT_TITLE = 'QA Learning Project';
 const DRY = process.argv.includes('--dry-run');
+const UPDATE = process.argv.includes('--update');
 const onlyArg = process.argv.find((a) => a.startsWith('--only='));
 const ONLY = onlyArg ? onlyArg.slice(7).split(',') : ['labels', 'milestones', 'issues', 'project'];
 
@@ -55,9 +57,14 @@ const INDEPENDENT = {
   T: 'Ручний еталон (з попередньої задачі), дизайн інструменту, перевірка результату на ≥ 2 входах.',
   R: 'Повністю самостійно.',
 };
+const JUNIOR = {
+  L: '1. **Покажи:** Claude пояснює теорію і показує приклад на іншому об\'єкті.\n2. **Разом:** першу частину виконую за каркасом / шаблоном.\n3. **Сама:** решту — самостійно, потім рев\'ю (L2: що добре + не більше 3 зауважень).',
+  T: '1. **Покажи:** Claude показує зразок іншого інструменту і пояснює його будову.\n2. **Разом:** для скрипта — каркас із `TODO`, які заповнюю сама.\n3. **Сама:** перевірка на реальних входах і порівняння з еталоном.',
+  R: 'Якщо важко почати — попроси Claude поставити 3 навідні питання.',
+};
 const SELF_REVIEW = {
   L: ['Усі acceptance criteria виконано та перевірено особисто', 'Факти про застосунок підтверджені файлом / запитом / UI', 'Немає секретів і коду з practice-software-testing-main/', 'Можу пояснити рішення без підглядання'],
-  T: ['Перевірено на ≥ 2 входах і порівняно з еталоном (ai-log.md)', 'Запис у docs/ai/toolkit.md', 'Детермінована логіка — у скрипті, мінімальні tools / permissions', 'Інструмент не вигадує ендпоїнти, таблиці, правила'],
+  T: ['Перевірено на ≥ 2 входах і порівняно з еталоном (ai-log.csv)', 'Запис у docs/ai/toolkit.md', 'Детермінована логіка — у скрипті, мінімальні tools / permissions', 'Інструмент не вигадує ендпоїнти, таблиці, правила'],
   R: ['Чесно описано помилки та їх причини', 'Є конкретні дії на наступну ітерацію'],
 };
 
@@ -75,9 +82,10 @@ function body(it, numbers) {
   if (it.theory) parts.push(`## 📚 Theory\n${it.theory}. Попроси Claude L0-пояснення перед стартом.`);
   if (it.type === 'T') parts.push('## 🛠 Tool Design\n- **Входи:**\n- **Виходи:**\n- **Tools / permissions:**\n- **Детермінована частина (скрипт):**');
   parts.push(
-    `## ✅ Tasks\n${it.type === 'R' ? '- [ ] Заповнити розділи за шаблоном `.github/ISSUE_TEMPLATE/reflection.md`' : it.type === 'T' ? '- [ ] Ручний еталон готовий\n- [ ] Дизайн інструменту\n- [ ] Реалізація\n- [ ] Перевірка на ≥ 2 входах\n- [ ] Запис у toolkit.md і ai-log.md' : '- [ ] Розібрати теорію\n- [ ] Виконати\n- [ ] Самоперевірка\n- [ ] PR через task-finish'}`,
+    `## ✅ Tasks\n${it.type === 'R' ? '- [ ] Заповнити розділи за шаблоном `.github/ISSUE_TEMPLATE/reflection.md`' : it.type === 'T' ? '- [ ] Ручний еталон готовий\n- [ ] Дизайн інструменту\n- [ ] Реалізація\n- [ ] Перевірка на ≥ 2 входах\n- [ ] Запис у toolkit.md і ai-log.csv' : '- [ ] Розібрати теорію\n- [ ] Виконати\n- [ ] Самоперевірка\n- [ ] PR через task-finish'}`,
     `## 🤖 AI Assistance\n${AI_HELP[it.type]}`,
     `## 🧠 Independent Work\n${INDEPENDENT[it.type]}`,
+    `## 🌱 Підтримка Junior\n${JUNIOR[it.type]}`,
     `## 📦 Deliverables\n- ${it.deliverable}`,
     `## 🏁 Acceptance Criteria\n${list(it.ac)}`,
     `## 🔍 Self-Review\n${list(SELF_REVIEW[it.type])}`,
@@ -95,28 +103,55 @@ async function syncLabels() {
 }
 
 async function syncMilestones() {
-  const existing = DRY ? [] : ghJson(['api', `repos/${REPO}/milestones?state=all&per_page=100`]).map((x) => x.title);
+  const existing = DRY ? [] : ghJson(['api', `repos/${REPO}/milestones?state=all&per_page=100`]);
   for (const m of milestones) {
-    if (existing.includes(m.title)) { log(`milestone exists: ${m.title}`); continue; }
+    const description = `Навички: ${m.skills}. Завершено, коли: ${m.done}.`;
+    const found = existing.find((x) => x.title === m.title);
+    if (found) {
+      if (UPDATE && found.description !== description) {
+        gh(['api', '-X', 'PATCH', `repos/${REPO}/milestones/${found.number}`, '-f', `description=${description}`]);
+        log(`milestone updated: ${m.title}`);
+      } else log(`milestone exists: ${m.title}`);
+      continue;
+    }
     log(`milestone ${m.title}`);
-    if (!DRY) gh(['api', `repos/${REPO}/milestones`, '-f', `title=${m.title}`, '-f', `description=Навички: ${m.skills}. Завершено, коли: ${m.done}.`]);
+    if (!DRY) gh(['api', `repos/${REPO}/milestones`, '-f', `title=${m.title}`, '-f', `description=${description}`]);
   }
+}
+
+function existingIssues() {
+  if (DRY) return [];
+  return ghJson(['issue', 'list', '--repo', REPO, '--state', 'all', '--limit', '300', '--json', 'number,title,labels,milestone'])
+    .map((x) => ({ ...x, id: x.title.match(/^\[(\d+\.\d+)\]/)?.[1] }))
+    .filter((x) => x.id);
 }
 
 function existingIssueNumbers() {
-  const numbers = {};
-  if (DRY) return numbers;
-  for (const x of ghJson(['issue', 'list', '--repo', REPO, '--state', 'all', '--limit', '300', '--json', 'number,title'])) {
-    const id = x.title.match(/^\[(\d+\.\d+)\]/)?.[1];
-    if (id) numbers[id] = x.number;
-  }
-  return numbers;
+  return Object.fromEntries(existingIssues().map((x) => [x.id, x.number]));
+}
+
+function updateIssue(it, current, numbers) {
+  const managed = new Set(LABELS.map(([name]) => name));
+  const wanted = labelsOf(it);
+  const have = current.labels.map((l) => l.name).filter((l) => managed.has(l));
+  const args = ['issue', 'edit', String(current.number), '--repo', REPO, '--title', issueTitle(it), '--body-file', '-', '--milestone', milestoneOf(it.id).title];
+  const add = wanted.filter((l) => !have.includes(l));
+  const remove = have.filter((l) => !wanted.includes(l));
+  if (add.length) args.push('--add-label', add.join(','));
+  if (remove.length) args.push('--remove-label', remove.join(','));
+  gh(args, body(it, numbers));
+  log(`issue updated: #${current.number} ${it.id}`);
 }
 
 async function syncIssues() {
-  const numbers = existingIssueNumbers();
+  const current = Object.fromEntries(existingIssues().map((x) => [x.id, x]));
+  const numbers = Object.fromEntries(Object.values(current).map((x) => [x.id, x.number]));
   for (const it of issues) {
-    if (numbers[it.id]) { log(`issue exists: #${numbers[it.id]} ${it.id}`); continue; }
+    if (numbers[it.id]) {
+      if (UPDATE) { updateIssue(it, current[it.id], numbers); await sleep(700); }
+      else log(`issue exists: #${numbers[it.id]} ${it.id}`);
+      continue;
+    }
     if (DRY) { if (it.id === '1.2') log(`\n--- preview ${issueTitle(it)}\nlabels: ${labelsOf(it)}\n\n${body(it, numbers)}\n---\n`); continue; }
     for (let attempt = 1; !numbers[it.id]; attempt++) {
       try {
@@ -145,12 +180,17 @@ async function syncProject() {
   }
   const num = String(project.number);
   let fields = ghJson(['project', 'field-list', num, '--owner', OWNER, '--format', 'json', '--limit', '50']).fields;
-  const status = fields.find((f) => f.name === 'Status');
+  // Read Status options via GraphQL (field-list may return stale data). Replacing options regenerates their IDs
+  // and wipes every item's status, so this only runs on a fresh board that still has the default options.
+  const status = ghJson(['api', 'graphql', '-f', `query={node(id:"${project.id}"){...on ProjectV2{field(name:"Status"){...on ProjectV2SingleSelectField{id options{name}}}}}}`]).data.node.field;
   const wanted = [['Backlog', 'GRAY'], ['Ready', 'BLUE'], ['In Progress', 'YELLOW'], ['Mentor Review', 'PURPLE'], ['Done', 'GREEN']];
-  if (status.options.map((o) => o.name).join() !== wanted.map((w) => w[0]).join()) {
+  const missing = wanted.filter(([name]) => !status.options.some((o) => o.name === name));
+  if (missing.length && !status.options.some((o) => o.name === 'Backlog')) {
     const opts = wanted.map(([name, color]) => `{name:${JSON.stringify(name)},color:${color},description:""}`).join(',');
     gh(['api', 'graphql', '-f', `query=mutation{updateProjectV2Field(input:{fieldId:"${status.id}",singleSelectOptions:[${opts}]}){projectV2Field{...on ProjectV2SingleSelectField{id}}}}`]);
-    log('status options updated');
+    log('status options set');
+  } else if (missing.length) {
+    log(`WARNING: Status is missing ${missing.map((m) => m[0]).join(', ')} — add manually in the UI to keep existing statuses`);
   }
   for (const [name, options] of [['Mentor Review', 'Approved,Skipped,Not needed'], ['Size', 'S,M,L']]) {
     if (!fields.some((f) => f.name === name)) {
@@ -162,18 +202,19 @@ async function syncProject() {
   const field = (name) => fields.find((f) => f.name === name);
   const option = (f, name) => f.options.find((o) => o.name === name).id;
 
+  // `gh project item-list` lags behind right after changes, so membership is checked from the issue side.
+  const [owner, name] = REPO.split('/');
+  const onBoard = (n) => ghJson(['api', 'graphql', '-f', `query={repository(owner:"${owner}",name:"${name}"){issue(number:${n}){projectItems(first:10){nodes{project{number}}}}}}`])
+    .data.repository.issue.projectItems.nodes.some((x) => String(x.project.number) === num);
   const numbers = existingIssueNumbers();
-  const items = ghJson(['project', 'item-list', num, '--owner', OWNER, '--format', 'json', '--limit', '300']).items;
-  const byNumber = Object.fromEntries(items.filter((x) => x.content?.number).map((x) => [x.content.number, x]));
   for (const it of issues) {
     const n = numbers[it.id];
-    if (!n) continue;
-    let item = byNumber[n];
-    if (!item) item = ghJson(['project', 'item-add', num, '--owner', OWNER, '--url', `https://github.com/${REPO}/issues/${n}`, '--format', 'json']);
+    if (!n || onBoard(n)) continue;
+    const item = ghJson(['project', 'item-add', num, '--owner', OWNER, '--url', `https://github.com/${REPO}/issues/${n}`, '--format', 'json']);
     const edit = (f, opt) => gh(['project', 'item-edit', '--id', item.id, '--project-id', project.id, '--field-id', f.id, '--single-select-option-id', option(f, opt)]);
-    if (!item.status) edit(field('Status'), it.deps.length ? 'Backlog' : 'Ready');
-    if (!it.review && !item['mentor Review']) edit(field('Mentor Review'), 'Not needed');
-    log(`project item #${n} ${it.id}`);
+    edit(field('Status'), it.deps.length ? 'Backlog' : 'Ready');
+    if (!it.review) edit(field('Mentor Review'), 'Not needed');
+    log(`project item added #${n} ${it.id}`);
   }
   log(`board: https://github.com/users/${OWNER}/projects/${num}`);
 }
