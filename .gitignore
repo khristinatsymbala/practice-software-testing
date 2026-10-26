@@ -1,6 +1,9 @@
 # Upstream application (licensed separately, never committed)
 practice-software-testing-main/
 
+# Personal study notes (local only)
+notes/
+
 # Dependencies
 node_modules/
 
